@@ -165,7 +165,7 @@ yarn start
 
 ## 线上访问
 已经部署到 git pages上
-网址：https://guozhouwei.github.io/near_crowdfunding_demo/
+网址：https://guozhouwei.github.io/near_crowdfunding_pages/
 ![Alt text](images/website.png)
 
 ## 关于我
