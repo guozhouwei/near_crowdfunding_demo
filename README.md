@@ -163,6 +163,11 @@ yarn start
 ﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌
 ![Alt text](images/participant-7.png)
 
+## 线上访问
+已经部署到 git pages上
+网址：https://guozhouwei.github.io/near_crowdfunding_demo/
+![Alt text](images/website.png)
+
 ## 关于我
 | 姓名 | 专长 | 沟通方式 |
 | :----:| :----: | :----: |
