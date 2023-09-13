@@ -16,7 +16,7 @@ use near_sdk::{env, near_bindgen, require, AccountId, BorshStorageKey, PanicOnDe
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)] // 实现 borsh 序列化, 实现不可用的 `default` 方法以通过编译
 pub struct Contract {
-    //合约账户，用于接收募捐的NEAR
+    //创建活动账户
     owner_id: AccountId,
     //最新活动编号
     num_campagins: u32,
@@ -337,13 +337,13 @@ mod test {
         let campaigns = contract.campaigns;
         let campaigns_iter = campaigns.iter();
         for campaign in campaigns_iter {
-            println!("【{}】合约接收账户：{}, 目标募集数量：{}near, 参与人数：{}人, 当前已筹集：{} yocto.", campaign.1.theme, campaign.1.receiver, campaign.1.funding_goal, campaign.1.number_funders, campaign.1.total_amount);
+            println!("【{}】合约接收账户：{}, 目标募集数量：{}near, 参与人数：{}人, 当前已筹集：{} NEAR.", campaign.1.theme, campaign.1.receiver, campaign.1.funding_goal, campaign.1.number_funders, campaign.1.total_amount);
             let opt_funders = contract.funders.get(campaign.0);
             if opt_funders.is_some() {
                 let funders = opt_funders.unwrap().iter();
                 for funder in funders {
                     println!(
-                        "     --->【募捐人】账户：{}, 捐赠：{} yocto.",
+                        "     --->【募捐人】账户：{}, 捐赠：{} NEAR.",
                         funder.addr, funder.amount
                     );
                 }
