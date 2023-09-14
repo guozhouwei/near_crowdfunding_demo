@@ -123,6 +123,12 @@ yarn start
     ```
 
 ## 页面操作展示
+
+### 线上访问
+项目已经部署到 git pages上，点击下面链接可直接访问
+网址：https://guozhouwei.github.io/near_crowdfunding_pages/
+![Alt text](images/website.png)
+
 ### 登陆页面
 ﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌
 ![Alt text](images/login-1.png)
@@ -163,10 +169,6 @@ yarn start
 ﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌﹌
 ![Alt text](images/participant-7.png)
 
-## 线上访问
-已经部署到 git pages上
-网址：https://guozhouwei.github.io/near_crowdfunding_pages/
-![Alt text](images/website.png)
 
 ## 关于我
 | 姓名 | 专长 | 沟通方式 |
