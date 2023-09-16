@@ -277,7 +277,7 @@ class App extends React.Component {
             this.state.crowdFunding_campagins.map(item=>(
               <div>
                 <label>
-                  『编号』: {item.num_campagins},『活动名称』: {item.theme},『募捐接收账户』: {item.receiver},『已募捐金额』: {item.total_amount} yoctoNEAR (≈{item.total_amount/YOCTO_TO_NEAR} NEAR),『募捐活动接收账户收到的金额』: {item.withdraw_amount} yoctoNEAR (≈{item.withdraw_amount/YOCTO_TO_NEAR} NEAR)
+                  『编号』: {item.num_campagins},『活动名称』: {item.theme},『募捐接收账户』: {item.receiver},『募资目标金额』：{item.funding_goal}yoctoNEAR (≈{item.funding_goal/YOCTO_TO_NEAR} NEAR),『已募捐金额』: {item.total_amount} yoctoNEAR (≈{item.total_amount/YOCTO_TO_NEAR} NEAR),『募捐活动接收账户收到的金额』: {item.withdraw_amount} yoctoNEAR (≈{item.withdraw_amount/YOCTO_TO_NEAR} NEAR)
                   {
                     item.total_amount > item.withdraw_amount ?
                       <label>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
