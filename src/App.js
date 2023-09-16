@@ -24,8 +24,6 @@ interface Funder {
 const TGas = Big(10).pow(12);
 const BoatOfGas = Big(200).mul(TGas);
 
-const ContractName = 'contract1234501.testnet';
-
 class App extends React.Component {
   constructor(props) {
     super(props);
@@ -36,9 +34,10 @@ class App extends React.Component {
     this.state = {
       connected: false, //
       signedIn: false,  //是否已经登陆钱包
-      accountId: null,  //募捐活动合约授权账户（只有此账户才有权创建募捐活动）
+      accountId: null,  //当前登陆账户（1 合约账户，2 权限账户（募捐活动合约授权账户（只有此账户才有权创建募捐活动））3 募捐人账户）
+      balance: null, //当前登陆账户的余额
 
-      //contract_accountId: "contract1234501.testnet",  //合约账户（合约已经部署到NEAR测试链上，合约授权账户为：owner123.testnet）
+      contract_accountId: "support123.testnet",  //合约账户（合约已经部署到NEAR测试链上，合约授权账户为：owner123.testnet）
       contract_sign_accountId: "owner123.testnet",  //合约授权账户
 
       //创建募捐合同
@@ -68,6 +67,7 @@ class App extends React.Component {
         connected: true,
         signedIn: !!this._accountId,
         accountId: this._accountId,
+        balance: this._balance,
       });
     }); 
   }
@@ -119,7 +119,7 @@ class App extends React.Component {
 
   async bidCrowdFund() {
     let funder_number = await this._account.functionCall({
-                                                    contractId: ContractName,
+                                                    contractId: this.state.contract_accountId,
                                                     methodName: "bid",
                                                     args: {
                                                       num_campagins: Number(this.state.crowdfunding_num),
@@ -136,30 +136,41 @@ class App extends React.Component {
     }
   }
 
+  async withdrawToReceiver(numCampagins) {
+    if (window.confirm("您确定转账吗?")) {
+      let accountBalance = await this._contract.withdraw_to_receiver({"num_campagins":numCampagins});
+      this.setState({
+        balance: accountBalance,
+      });
+      if (this._accountId) {
+        await this.refreshAccountStats();
+      }
+    } 
+  }
+
   async _initNear() {
     const nearConfig = {
       networkId: 'default',
       nodeUrl: 'https://rpc.testnet.near.org',
-      contractName: ContractName,
+      contractName: this.state.contract_accountId,
       walletUrl: 'https://wallet.testnet.near.org',
     };
-    const keyStore = new nearAPI.keyStores.BrowserLocalStorageKeyStore();
-    const near = await nearAPI.connect(Object.assign({ deps: { keyStore } }, nearConfig));
-    this._keyStore = keyStore;
-    this._nearConfig = nearConfig;
-    this._near = near;
-
-    this._walletConnection = new nearAPI.WalletConnection(near, ContractName);
-    this._accountId = this._walletConnection.getAccountId();
-    this._account = this._walletConnection.account();
-    //
-    console.log("_accountId=" + this._accountId + ", _account=" + this._account);
-    //
+     const keyStore = new nearAPI.keyStores.BrowserLocalStorageKeyStore();
+     const near = await nearAPI.connect(Object.assign({ deps: { keyStore } }, nearConfig));
+     this._keyStore = keyStore;
+     this._nearConfig = nearConfig;
+     this._near = near;
     
-    this._contract = new nearAPI.Contract(this._account, ContractName, {
-      viewMethods: ['get_crowdFunding_by_num_campagins', 'get_all_crowdFunding', 'get_funders_by_num_campagins'],
-      changeMethods: ['newCampaign', 'bid'],
-    });
+     this._walletConnection = new nearAPI.WalletConnection(near, this.state.contract_accountId);
+     this._accountId = this._walletConnection.getAccountId();
+     this._account = this._walletConnection.account();
+     this._balance = (await this._account.getAccountBalance()).total;
+     console.log("_accountId=" + this._accountId + ", _account=" + this._account);
+     //
+     this._contract = new nearAPI.Contract(this._account, this.state.contract_accountId, {
+     viewMethods: ['get_crowdFunding_by_num_campagins', 'get_all_crowdFunding', 'get_funders_by_num_campagins'],
+      changeMethods: ['newCampaign', 'bid', 'withdraw_to_receiver'],
+     });
 
     if (this._accountId) {
       await this.refreshAccountStats();
@@ -183,7 +194,7 @@ class App extends React.Component {
   async requestSignIn() {
     const appTitle = '去中心化募捐平台';
     await this._walletConnection.requestSignIn(
-      ContractName,
+      this.state.contract_accountId,
       appTitle
     )
   }
@@ -194,11 +205,13 @@ class App extends React.Component {
     this.setState({
       signedIn: !!this._accountId,
       accountId: this._accountId,
+      balance: this._balance,
     })
   }
 
   render() {
     console.log("call render().");
+    const YOCTO_TO_NEAR = 1000000000000000000000000;
     const content = !this.state.connected ? (
       <div>
         正在链接NEAR钱包 ...
@@ -209,7 +222,7 @@ class App extends React.Component {
         <div className="float-right">
           <button className="btn btn-outline-secondary" onClick={() => this.logOut()}>退出</button>
         </div>
-        <h5><span className="font-weight-bold">当前登陆NEAR账号：{this.state.accountId}</span></h5>
+        <h5><span className="font-weight-bold">当前登陆NEAR账号：{this.state.accountId}, 账号余额：{this.state.balance} yoctoNEAR (≈{this.state.balance/YOCTO_TO_NEAR} NEAR)</span></h5>
         <div>
       </div>
       {
@@ -221,7 +234,7 @@ class App extends React.Component {
           <form onSubmit={this.createNewCrowdSubmit}>
             <label>活动名称： <input type="text" style={{marginLeft:"10px"}} value={this.state.new_crowdfunding_theme} onChange={(event) => {this.handleNewCrowdChange(event)}} /> </label><br/>
             <label>接收募捐账户：<input type="text" style={{marginLeft:"10px"}} value={this.state.new_crowdfunding_receiver} onChange={(event) => {this.handleNewReceiverChange(event)}} /> </label><br/>
-            <label>募捐目标金额： <input type="number" style={{marginLeft:"10px"}} value={this.state.new_crowdfunding_funding_goal} onChange={(event) => {this.handleNewFundingGoalChange(event)}} /> </label><br/>
+            <label>募捐目标金额： <input type="number" style={{marginLeft:"10px"}} value={this.state.new_crowdfunding_funding_goal} onChange={(event) => {this.handleNewFundingGoalChange(event)}} /> NEAR </label><br/>
             <input type="submit" value="提交" />
           </form>
 
@@ -230,14 +243,14 @@ class App extends React.Component {
           <label> 〓 已创建的募捐活动列表 〓 </label> <br/>
             {
                 this.state.crowdFunding_campagins.map(item=>(
-                    <li key={item} >『编号』：{item.num_campagins +", "} 『活动名称』：{item.theme +", "} 『募捐接收账户』：{item.receiver + ", " } 『募资目标金额』：{item.funding_goal + "NEAR, " } 『募资参与人数』：{item.number_funders + ", "}  『已经募集的金额』：{item.total_amount + " yoctoNEAR"} 
+                    <li key={item} >『编号』：{item.num_campagins},『活动名称』：{item.theme},『募捐接收账户』：{item.receiver},『募资目标金额』：{item.funding_goal}yoctoNEAR (≈{item.funding_goal/YOCTO_TO_NEAR} NEAR),『募资参与人数』：{item.number_funders},『已经募集的金额』：{item.total_amount}yoctoNEAR (≈{item.total_amount/YOCTO_TO_NEAR} NEAR)
                       <br/>
                       <label style={{fontSize: '13px'}}>  ✿ 募捐人列表 </label> <br/>
                       <div style={{fontSize: '10px'}}>
                         {
                           this.state.crowdFunding_funding_map.get(item.num_campagins) != null && this.state.crowdFunding_funding_map.get(item.num_campagins) != undefined && this.state.crowdFunding_funding_map.get(item.num_campagins).length > 0 ? (
                             this.state.crowdFunding_funding_map.get(item.num_campagins).map(item12=>(
-                              <div key={item12}> ◦  捐赠人地址：{item12.addr +", "} 捐赠金额：{item12.amount + " yoctoNEAR"} <br/></div>
+                              <div key={item12}> ◦  捐赠人地址：{item12.addr +", "} 捐赠金额：{item12.amount} yoctoNEAR (≈{item12.amount/YOCTO_TO_NEAR} NEAR)<br/></div>
                             )  
                           )
                           ):(
@@ -256,17 +269,43 @@ class App extends React.Component {
         
        : 
        
+        this.state.contract_accountId === this.state.accountId ? 
         <div>
+        <h6><span className="font-weight-bold">转账到募捐活动接收账户</span></h6>
+        {
+            (
+            this.state.crowdFunding_campagins.map(item=>(
+              <div>
+                <label>
+                  『编号』: {item.num_campagins},『活动名称』: {item.theme},『募捐接收账户』: {item.receiver},『已募捐金额』: {item.total_amount} yoctoNEAR (≈{item.total_amount/YOCTO_TO_NEAR} NEAR),『募捐活动接收账户收到的金额』: {item.withdraw_amount} yoctoNEAR (≈{item.withdraw_amount/YOCTO_TO_NEAR} NEAR)
+                  {
+                    item.total_amount > item.withdraw_amount ?
+                      <label>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        <button className="btn btn-primary" onClick={() => this.withdrawToReceiver(item.num_campagins)}>转账到募捐活动接收账户</button>
+                      </label> 
+                    :
+                      <p>&nbsp;&nbsp;</p>
+                  }
+                  </label>
+                <br/><hr/>
+              </div>
+            ))
+            )
+          }
+        </div>
+
+        :
+          <div>
           <h6><span className="font-weight-bold">欢迎您参与募捐活动</span></h6>
           <hr></hr>
           <label> 请选择您要参与的募捐活动 </label> <br/>
           {
             (
             this.state.crowdFunding_campagins.map(item=>(
-              <label>
-                『编号』: {item.num_campagins +", "} 『活动名称』: {item.theme +", "} 『募捐接收账户』: {item.receiver + ", " } 『募捐人数』: {item.number_funders}
+              <div>
+                <label>『编号』: {item.num_campagins},『活动名称』: {item.theme},『募捐接收账户』: {item.receiver},『募资目标金额』：{item.funding_goal}yoctoNEAR (≈{item.funding_goal/YOCTO_TO_NEAR} NEAR),『募捐人数』: {item.number_funders} </label>
                 <br/>
-              </label>
+              </div>
             ))
             )
           }
@@ -276,7 +315,7 @@ class App extends React.Component {
             <label>募捐金额： <input type="number" style={{marginLeft:"10px"}} value={this.state.crowdfunding_goal} onChange={(event) => {this.handlewCrowdFundingGoalChange(event)}} /> NEAR</label><br/>
             <input type="submit" value="提交" />
           </form>
-        </div>
+        </div> 
       }
       </div>
     ) : (
@@ -289,7 +328,7 @@ class App extends React.Component {
     return (
         <div className="px-5">
           <h1>NEAR去中心化募捐活动平台</h1>
-          <span className="font-weight-light">(提示⚠️：募捐活动合约已经部署到测试链，合约账户：{ContractName}，授权账户：{this.state.contract_sign_accountId})</span>
+          <span className="font-weight-light">(提示⚠️：募捐活动合约已经部署到测试链，合约账户：{this.state.contract_accountId}，授权账户：{this.state.contract_sign_accountId})</span>
           {content}
         </div>
     );

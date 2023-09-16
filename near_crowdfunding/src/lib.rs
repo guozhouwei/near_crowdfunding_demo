@@ -3,7 +3,7 @@ use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize}; // self 必须导
 use near_sdk::serde::Serialize;
 use near_sdk::store::UnorderedMap;
 use near_sdk::store::Vector;
-use near_sdk::CryptoHash;
+use near_sdk::{CryptoHash, Promise};
 use std::iter::FromIterator;
 
 use near_sdk::{env, near_bindgen, require, AccountId, BorshStorageKey, PanicOnDefault};
@@ -55,9 +55,10 @@ enum StorageKey {
 pub struct CrowdFunding {
     theme: String,           //募捐活动主题
     pub receiver: AccountId, //接收募捐的NEAR账户地址
-    funding_goal: u32,       //募资目标金额
+    funding_goal: u128,       //募资目标金额    //单位yoctoNEAT
     number_funders: u32,     //募资参与人数
-    total_amount: u128,      //当前已经募集的金额
+    total_amount: u128,      //当前已经募集的金额   //单位yoctoNEAT
+    withdraw_amount: u128,   //已转到接收账户金额   //单位yoctoNEAT
 }
 
 impl CrowdFunding {
@@ -65,15 +66,17 @@ impl CrowdFunding {
         theme: String,
         receiver: AccountId,
         number_funders: u32,
-        funding_goal: u32,
+        funding_goal: u128,
     ) -> CrowdFunding {
-        let total_amount = 0;
+        let total_amount = 0_u128;
+        let withdraw_amount = 0_u128;
         CrowdFunding {
             theme,
             receiver,
             number_funders,
             funding_goal,
             total_amount,
+            withdraw_amount,
         }
     }
 }
@@ -84,12 +87,11 @@ impl CrowdFunding {
 #[serde(crate = "near_sdk::serde")]
 pub struct Funder {
     addr: AccountId,
-    amount: u128,
+    amount: u128,   //单位yoctoNEAT
 }
 
 impl Funder {
     pub fn new(addr: AccountId, amount: u128) -> Funder {
-        let _total_amount = 0;
         Self { addr, amount }
     }
 }
@@ -112,7 +114,7 @@ impl Contract {
         theme: String,
         receiver: AccountId,
         number_funders: u32,
-        funding_goal: u32,
+        funding_goal: u128,
     ) -> Option<u32> {
         require!(
             env::predecessor_account_id() == self.owner_id,
@@ -120,18 +122,17 @@ impl Contract {
         );
 
         self.num_campagins += 1;
-        let crowd_funding = CrowdFunding::new(theme, receiver, number_funders, funding_goal);
+        let crowd_funding = CrowdFunding::new(theme, receiver, number_funders, funding_goal * 1_000_000_000_000_000_000_000_000);
         self.campaigns.insert(self.num_campagins, crowd_funding);
         //
-        self.funders
-            .insert(self.num_campagins, Vector::new(StorageKey::DynamicKey { 
+        self.funders.insert(self.num_campagins, Vector::new(StorageKey::DynamicKey { 
                                                                             num_campagins_storagekey : self.num_campagins
                                                                         }));
 
         Some(self.num_campagins)
     }
 
-    //用户参与募捐活动, 返回此募捐活动的第几位参与者
+    //用户参与募捐活动, 并把募捐款准到合约账户，返回此募捐活动的第几位参与者
     #[payable]
     pub fn bid(&mut self, num_campagins: u32) -> u32 {
         let opt_crowd_funding = self.campaigns.get_mut(&num_campagins);
@@ -140,17 +141,52 @@ impl Contract {
         let crowd_funding: &mut CrowdFunding = opt_crowd_funding.unwrap();
         //参与人募捐的near数量
         let amount = env::attached_deposit();
-        crowd_funding.total_amount += amount;
-        crowd_funding.number_funders += 1_u32;
+        //捐赠金额不能比活动募捐目标金额多, 多余的金额要退回募捐人账户
+        let is_back = (crowd_funding.total_amount + amount) > crowd_funding.funding_goal;
+        if is_back {
+            let back_amount = (amount + crowd_funding.total_amount) - crowd_funding.funding_goal;
+            let left_amount = crowd_funding.funding_goal-crowd_funding.total_amount;
+            //
+            Promise::new(env::predecessor_account_id()).transfer(back_amount);
+            //
+            crowd_funding.total_amount = crowd_funding.funding_goal;
+            let opt_funders = self.funders.get_mut(&num_campagins);
+            let funders: &mut Vector<Funder> = opt_funders.unwrap();
+            let funder_account_id = env::signer_account_id();
+            let funder = Funder::new(funder_account_id, left_amount);
+            funders.push(funder);
+        } else {
+            crowd_funding.total_amount += amount;
+            let opt_funders = self.funders.get_mut(&num_campagins);
+            let funders: &mut Vector<Funder> = opt_funders.unwrap();
+            let funder_account_id = env::signer_account_id();
+            let funder = Funder::new(funder_account_id, amount);
+            funders.push(funder);
+        }
+        /*
+         * 转账到活动接受账户: 捐赠人先把near转给合约账户，合约账户在把收到的near转给活动接受账户，是不是太浪费gas了？
+         * 此方案不采用，方案调整为：
+         * 募捐人捐赠的near先转到合约账户，然后合约账户再转到接收账户，但是这样有些耗费gas，可以合约账户先接收募捐款，等募捐到一定金额，登陆合约账户，人工把款转账到活动接收账户，这样省一些gas费。
+         */
+        //Promise::new(crowd_funding.receiver.clone()).transfer(amount);
         //
+        crowd_funding.number_funders += 1_u32;
         let opt_funders = self.funders.get_mut(&num_campagins);
         let funders: &mut Vector<Funder> = opt_funders.unwrap();
-        //
-        let funder_account_id = env::signer_account_id();
-        let funder = Funder::new(funder_account_id, amount);
-        funders.push(funder);
-
         funders.len()
+    }
+
+    //从合约账户把募捐到的金额再转到活动接收账户, 返回转账金额
+    #[payable]
+    pub fn withdraw_to_receiver(&mut self, num_campagins: u32) -> u128 {
+        let opt_crowd_funding = self.campaigns.get_mut(&num_campagins);
+        let crowd_funding: &mut CrowdFunding = opt_crowd_funding.unwrap();
+        //
+        Promise::new(crowd_funding.receiver.clone()).transfer(crowd_funding.total_amount - crowd_funding.withdraw_amount);
+        //
+        crowd_funding.withdraw_amount = crowd_funding.total_amount;
+        //
+        env::account_balance()
     }
 
     // 获取募捐合约所属人
@@ -228,7 +264,7 @@ mod test {
         "funder_addr3.near".parse().unwrap()
     }
 
-    const ONE_TOKEN: Balance = 1_000_000_000_000_000_000;
+    const YOCTO_TO_NEAR: Balance = 1_000_000_000_000_000_000_000_000;
 
     #[test]
     fn test_init_process() {
@@ -236,7 +272,7 @@ mod test {
         let context = VMContextBuilder::new()
             .predecessor_account_id(contract_owner())
             .signer_account_id(funder_addr1())
-            .attached_deposit(8)
+            .attached_deposit(8*YOCTO_TO_NEAR)
             .build();
         testing_env!(context);
 
@@ -256,7 +292,7 @@ mod test {
             String::from("涿州水灾募捐活动"),
             campaign_receiver1(),
             0_u32,
-            100_u32,
+            100_u128,
         );
         //
         assert_eq!(num_campaign1.unwrap(), 1, "第1个募捐活动编号错误！");
@@ -274,7 +310,7 @@ mod test {
             String::from("流浪动物救助募捐活动"),
             campaign_receiver2(),
             0_u32,
-            500_u32,
+            500_u128,
         );
         //
         assert_eq!(num_campaign2.unwrap(), 2, "第2个募捐活动编号错误！");
@@ -306,7 +342,7 @@ mod test {
         let context1 = VMContextBuilder::new()
             .predecessor_account_id(contract_owner())
             .signer_account_id(funder_addr2())
-            .attached_deposit(9)
+            .attached_deposit(109*YOCTO_TO_NEAR)
             .build();
         testing_env!(context1);
         //
@@ -317,13 +353,13 @@ mod test {
         let context2 = VMContextBuilder::new()
             .predecessor_account_id(contract_owner())
             .signer_account_id(funder_addr3())
-            .attached_deposit(50)
+            .attached_deposit(50*YOCTO_TO_NEAR)
             .build();
         testing_env!(context2);
         //
         let funder_number = contract.bid(num_campaign2.unwrap());
         assert_eq!(funder_number, 1, "用户参与募捐活动2失败！");
-        /**
+        /*
          * step4 查看所有募捐活动
          */
         let crowdFunding_vec = contract.get_all_crowdFunding();
@@ -337,14 +373,14 @@ mod test {
         let campaigns = contract.campaigns;
         let campaigns_iter = campaigns.iter();
         for campaign in campaigns_iter {
-            println!("【{}】合约接收账户：{}, 目标募集数量：{}near, 参与人数：{}人, 当前已筹集：{} NEAR.", campaign.1.theme, campaign.1.receiver, campaign.1.funding_goal, campaign.1.number_funders, campaign.1.total_amount);
+            println!("【{}】合约接收账户：{}, 目标募集数量：{}yoctoNEAR(≈{}NEAR), 参与人数：{}人, 当前已筹集：{} yoctoNEAR(≈{}NEAR).", campaign.1.theme, campaign.1.receiver, campaign.1.funding_goal, campaign.1.funding_goal/YOCTO_TO_NEAR, campaign.1.number_funders, campaign.1.total_amount, campaign.1.total_amount/YOCTO_TO_NEAR);
             let opt_funders = contract.funders.get(campaign.0);
             if opt_funders.is_some() {
                 let funders = opt_funders.unwrap().iter();
                 for funder in funders {
                     println!(
-                        "     --->【募捐人】账户：{}, 捐赠：{} NEAR.",
-                        funder.addr, funder.amount
+                        "     --->【募捐人】账户：{}, 捐赠：{}yoctoNEAR(≈{}NEAR).",
+                        funder.addr, funder.amount, funder.amount/YOCTO_TO_NEAR
                     );
                 }
             }
